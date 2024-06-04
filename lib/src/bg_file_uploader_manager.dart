@@ -20,6 +20,7 @@ const _progressStream = 'progress_stream';
 const _completionStream = 'completion_stream';
 const _failureStream = 'failure_stream';
 const _authFailureStream = 'auth_stream';
+const managerDocumentsDir = 'bgFileUploaderManager';
 
 @pragma('vm:entry-point')
 enum _NotificationIds {
@@ -125,11 +126,11 @@ class TusBGFileUploaderManager {
 
   Future<List<UploadingModel>> checkForUnfinishedUploads() async {
     final prefs = await SharedPreferences.getInstance();
-    final pendingUploads = prefs.getPendingUploading();
+    final readyForUploadUploads = prefs.getReadyForUploadUploading();
     final processingUploads = prefs.getProcessingUploading();
     final failedUploads = prefs.getFailedUploading();
 
-    return pendingUploads
+    return readyForUploadUploads
       ..addAll(processingUploads)
       ..addAll(failedUploads);
   }
@@ -158,6 +159,30 @@ class TusBGFileUploaderManager {
     final isRunning = await service.isRunning();
     if (!isRunning) {
       await service.startService();
+    } else {
+      _persistFilesForUpload(uploadingModels: uploadingModels, sharedPreferences: prefs);
+    }
+  }
+
+  static Future<void> _persistFilesForUpload({
+    List<UploadingModel>? uploadingModels,
+    required SharedPreferences sharedPreferences,
+  }) async {
+    final models = uploadingModels ?? sharedPreferences.getPendingUploading();
+    final compressParams = sharedPreferences.getCompressParams();
+    for (final model in models) {
+      final notPersistedFile = File(model.path);
+      final persistedFile = await notPersistedFile.saveToDocumentsDir();
+      File? compressedFile;
+      if (compressParams != null) {
+        compressedFile = await compressImageIfNeeded(
+          sharedPreferences,
+          persistedFile.path,
+          compressParams,
+        );
+      }
+      model.path = compressedFile?.path ?? persistedFile.path;
+      sharedPreferences.addFileToReadyForUpload(uploadingModel: model);
     }
   }
 
@@ -182,6 +207,7 @@ class TusBGFileUploaderManager {
   static _onStart(ServiceInstance service) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
+    await _persistFilesForUpload(sharedPreferences: prefs);
     if (!prefs.getUploadAfterStartingService()) {
       return;
     }
@@ -222,10 +248,7 @@ class TusBGFileUploaderManager {
     required String uploadUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final compressedPath = uploadingModel.compressedPath;
-    if (compressedPath != null) {
-      File(compressedPath).delete();
-    }
+    File(uploadingModel.path).safeDelete();
     await prefs.addFileToComplete(uploadingModel: uploadingModel);
     await _updateProgress(currentFileProgress: 1);
     service.invoke(_completionStream, {'id': uploadingModel.id, 'url': uploadUrl});
@@ -248,11 +271,11 @@ class TusBGFileUploaderManager {
   static Future<void> _updateProgress({required double currentFileProgress}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    final pendingFiles = prefs.getPendingUploading().length;
+    final readyForUploadFiles = prefs.getReadyForUploadUploading().length;
     final uploadingFiles = prefs.getProcessingUploading().length;
     final completeFiles = prefs.getCompleteUploading().length;
     final failedFiles = prefs.getFailedUploading().length;
-    final allFiles = pendingFiles + uploadingFiles + completeFiles + failedFiles;
+    final allFiles = readyForUploadFiles + uploadingFiles + completeFiles + failedFiles;
     final int progress;
     final String message;
     final bool iosShowProgress;
@@ -301,16 +324,16 @@ class TusBGFileUploaderManager {
     Iterable<Future<TusFileUploader>> failedUploads = const [],
   ]) async {
     await prefs.reload();
-    final pendingUploads = _getPendingUploads(prefs, service);
+    final readyForUploadUploads = _getReadyForUploadUploads(prefs, service);
     final headers = prefs.getHeaders();
-    final total = processingUploads.length + pendingUploads.length + failedUploads.length;
+    final total = processingUploads.length + readyForUploadUploads.length + failedUploads.length;
     buildLogger(prefs).d(
-      "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Pending files: ${pendingUploads.length}\n=> Failed files: ${failedUploads.length}",
+      "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
       final uploaderList = await Future.wait([
         ...processingUploads,
-        ...pendingUploads,
+        ...readyForUploadUploads,
         ...failedUploads,
       ]);
       await Future.wait(uploaderList.map((uploader) => uploader.upload(headers: headers)));
@@ -353,14 +376,14 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Iterable<Future<TusFileUploader>> _getPendingUploads(
+  static Iterable<Future<TusFileUploader>> _getReadyForUploadUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
-    final allPendingFiles = prefs.getPendingUploading();
+    final allReadyForUploadFiles = prefs.getReadyForUploadUploading();
     final filesToUpload = <UploadingModel>[];
     final filesToRemove = <UploadingModel>[];
-    for (var model in allPendingFiles) {
+    for (var model in allReadyForUploadFiles) {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
@@ -368,11 +391,11 @@ class TusBGFileUploaderManager {
       }
     }
     for (var path in filesToRemove) {
-      prefs.removeFile(path, pendingStoreKey);
+      prefs.removeFile(path, readyForUploadStoreKey);
     }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allPendingFiles
+    return allReadyForUploadFiles
         .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
         .map((model) async {
       final uploader = await _uploaderFromPath(
@@ -441,22 +464,6 @@ class TusBGFileUploaderManager {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     var filePath = uploadingModel.path;
-    final compressParams = prefs.getCompressParams();
-    if (uploadingModel.compressedPath != null) {
-      filePath = uploadingModel.compressedPath!;
-    } else {
-      if (compressParams != null) {
-        final compressedFile = await compressImageIfNeeded(
-          prefs,
-          filePath,
-          compressParams,
-        );
-        if (compressedFile != null) {
-          filePath = compressedFile.path;
-        }
-      }
-    }
-    uploadingModel.compressedPath = filePath;
     final xFile = XFile(filePath);
     final totalBytes = await xFile.length();
     final uploadMetadata = xFile.generateMetadata(originalMetadata: metadata);
@@ -574,8 +581,10 @@ class TusBGFileUploaderManager {
     logger.d('ORIGINAL FILE SIZE: ${length ~/ 1000}KB');
     File? compressedFile;
     if (length > params.idealSize) {
-      final rootDir = await path_provider.getTemporaryDirectory();
-      final targetPath = '${rootDir.absolute.path}/${file.hashCode}.jpg';
+      final rootDir = await path_provider.getApplicationDocumentsDirectory();
+      final timeStamp = DateTime.now().millisecondsSinceEpoch;
+      final targetPath =
+          '${rootDir.path}/$managerDocumentsDir/$timeStamp${file.hashCode}.jpg';
       final relation = params.idealSize / length;
       final qualityKoef = 0.75 * relation;
       final quality = (qualityKoef + relation) * 100;
@@ -604,9 +613,15 @@ class TusBGFileUploaderManager {
       if (xFile != null) {
         final resultLength = await xFile.length();
         logger.d('COMPRESSED FILE SIZE: ${resultLength ~/ 1000}KB');
+        final File fileToDelete;
         if (resultLength < length) {
-          compressedFile = await File(xFile.path).create();
+          compressedFile = File(xFile.path);
+          fileToDelete = file;
+        } else {
+          fileToDelete = File(xFile.path);
         }
+
+        await fileToDelete.safeDelete();
       }
     }
     return compressedFile;
