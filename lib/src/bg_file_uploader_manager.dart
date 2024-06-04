@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:collection/collection.dart' '';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -20,6 +21,7 @@ const _progressStream = 'progress_stream';
 const _completionStream = 'completion_stream';
 const _failureStream = 'failure_stream';
 const _authFailureStream = 'auth_stream';
+const _serverErrorStream = 'server_error';
 const managerDocumentsDir = 'bgFileUploaderManager';
 
 @pragma('vm:entry-point')
@@ -87,6 +89,10 @@ class TusBGFileUploaderManager {
         _authFailureStream,
       );
 
+  Stream<Map<String, dynamic>?> get serverErrorStream => FlutterBackgroundService().on(
+        _serverErrorStream,
+      );
+
   Future<void> setup(
     String baseUrl, {
     int? timeout,
@@ -126,11 +132,11 @@ class TusBGFileUploaderManager {
 
   Future<List<UploadingModel>> checkForUnfinishedUploads() async {
     final prefs = await SharedPreferences.getInstance();
-    final readyForUploadUploads = prefs.getReadyForUploadUploading();
+    final readyForUploadingUploads = prefs.getReadyForUploading();
     final processingUploads = prefs.getProcessingUploading();
     final failedUploads = prefs.getFailedUploading();
 
-    return readyForUploadUploads
+    return readyForUploadingUploads
       ..addAll(processingUploads)
       ..addAll(failedUploads);
   }
@@ -161,6 +167,45 @@ class TusBGFileUploaderManager {
       await service.startService();
     } else {
       _persistFilesForUpload(uploadingModels: uploadingModels, sharedPreferences: prefs);
+    }
+  }
+
+  Future<void> retryUploadingFiles({
+    required List<int> modelIds,
+    Map<String, String>? headers,
+    Map<String, String>? metadata,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    await prefs.setUploadAfterStartingService(true);
+    await prefs.setHeadersMetadata(headers: headers, metadata: metadata);
+    final allFailedFiles = prefs.getFailedUploading();
+    for (final model in allFailedFiles) {
+      if (modelIds.contains(model.id)) {
+        prefs.addFileToProcessing(uploadingModel: model);
+      }
+    }
+    final service = FlutterBackgroundService();
+    final isRunning = await service.isRunning();
+    if (!isRunning) {
+      await service.startService();
+    }
+  }
+
+  Future<void> removeFileById(int modelId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final allModels = [
+      ...prefs.getPendingUploading(),
+      ...prefs.getReadyForUploading(),
+      ...prefs.getProcessingUploading(),
+      ...prefs.getCompleteUploading(),
+      ...prefs.getFailedUploading(),
+    ];
+    UploadingModel? model = allModels.firstWhereOrNull(
+      (e) => e.id == modelId,
+    );
+    if (model != null) {
+      prefs.removeFileFromEveryStore(model);
     }
   }
 
@@ -209,6 +254,7 @@ class TusBGFileUploaderManager {
     await prefs.reload();
     await _persistFilesForUpload(sharedPreferences: prefs);
     if (!prefs.getUploadAfterStartingService()) {
+      _dispose(service);
       return;
     }
     ui.DartPluginRegistrant.ensureInitialized();
@@ -234,8 +280,7 @@ class TusBGFileUploaderManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     final processingUploads = _getProcessingUploads(prefs, service);
-    final failedUploads = _getFailedUploads(prefs, service);
-    await _uploadFiles(prefs, service, processingUploads, failedUploads);
+    await _uploadFiles(prefs, service, processingUploads);
     await prefs.reload();
     await prefs.resetUploading();
     _dispose(service);
@@ -271,7 +316,7 @@ class TusBGFileUploaderManager {
   static Future<void> _updateProgress({required double currentFileProgress}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    final readyForUploadFiles = prefs.getReadyForUploadUploading().length;
+    final readyForUploadFiles = prefs.getReadyForUploading().length;
     final uploadingFiles = prefs.getProcessingUploading().length;
     final completeFiles = prefs.getCompleteUploading().length;
     final failedFiles = prefs.getFailedUploading().length;
@@ -315,6 +360,16 @@ class TusBGFileUploaderManager {
     service.invoke(_authFailureStream, {'id': uploadingModel.id});
   }
 
+  @pragma('vm:entry-point')
+  static Future<void> _onServerError({
+    required UploadingModel uploadingModel,
+    required ServiceInstance service,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.addFileToFailed(uploadingModel: uploadingModel);
+    service.invoke(_serverErrorStream, {'id': uploadingModel.id});
+  }
+
   // PRIVATE ---------------------------------------------------------------------------------------
   @pragma('vm:entry-point')
   static Future<void> _uploadFiles(
@@ -324,16 +379,16 @@ class TusBGFileUploaderManager {
     Iterable<Future<TusFileUploader>> failedUploads = const [],
   ]) async {
     await prefs.reload();
-    final readyForUploadUploads = _getReadyForUploadUploads(prefs, service);
+    final readyForUploadingUploads = _getreadyForUploadingUploads(prefs, service);
     final headers = prefs.getHeaders();
-    final total = processingUploads.length + readyForUploadUploads.length + failedUploads.length;
+    final total = processingUploads.length + readyForUploadingUploads.length + failedUploads.length;
     buildLogger(prefs).d(
-      "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadUploads.length}\n=> Failed files: ${failedUploads.length}",
+      "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
       final uploaderList = await Future.wait([
         ...processingUploads,
-        ...readyForUploadUploads,
+        ...readyForUploadingUploads,
         ...failedUploads,
       ]);
       await Future.wait(uploaderList.map((uploader) => uploader.upload(headers: headers)));
@@ -376,14 +431,14 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Iterable<Future<TusFileUploader>> _getReadyForUploadUploads(
+  static Iterable<Future<TusFileUploader>> _getreadyForUploadingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
-    final allReadyForUploadFiles = prefs.getReadyForUploadUploading();
+    final allReadyForUploadingFiles = prefs.getReadyForUploading();
     final filesToUpload = <UploadingModel>[];
     final filesToRemove = <UploadingModel>[];
-    for (var model in allReadyForUploadFiles) {
+    for (var model in allReadyForUploadingFiles) {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
@@ -391,11 +446,11 @@ class TusBGFileUploaderManager {
       }
     }
     for (var path in filesToRemove) {
-      prefs.removeFile(path, readyForUploadStoreKey);
+      prefs.removeFile(path, readyForUploadingStoreKey);
     }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allReadyForUploadFiles
+    return allReadyForUploadingFiles
         .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
         .map((model) async {
       final uploader = await _uploaderFromPath(
@@ -505,6 +560,10 @@ class TusBGFileUploaderManager {
         uploadingModel: uploadingModel,
         service: service,
       ),
+      serverErrorCallback: (uploadingModel, _) async => _onServerError(
+        uploadingModel: uploadingModel,
+        service: service,
+      ),
     );
   }
 
@@ -583,8 +642,7 @@ class TusBGFileUploaderManager {
     if (length > params.idealSize) {
       final rootDir = await path_provider.getApplicationDocumentsDirectory();
       final timeStamp = DateTime.now().millisecondsSinceEpoch;
-      final targetPath =
-          '${rootDir.path}/$managerDocumentsDir/$timeStamp${file.hashCode}.jpg';
+      final targetPath = '${rootDir.path}/$managerDocumentsDir/$timeStamp${file.hashCode}.jpg';
       final relation = params.idealSize / length;
       final qualityKoef = 0.75 * relation;
       final quality = (qualityKoef + relation) * 100;

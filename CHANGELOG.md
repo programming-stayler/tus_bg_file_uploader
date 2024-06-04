@@ -1,3 +1,7 @@
+## 0.0.19
+
+Improved uploading retry
+
 ## 0.0.18
 
 Improved setting up of the library

@@ -8,7 +8,7 @@ import 'package:tus_file_uploader/tus_file_uploader.dart';
 import 'package:synchronized/synchronized.dart';
 
 const pendingStoreKey = 'pending_uploading';
-const readyForUploadStoreKey = 'ready_for_upload_uploading';
+const readyForUploadingStoreKey = 'ready_for_uploading';
 const processingStoreKey = 'processing_uploading';
 const completeStoreKey = 'complete_uploading';
 const failedStoreKey = 'failed_uploading';
@@ -31,7 +31,7 @@ extension SharedPreferencesUtils on SharedPreferences {
     return lock.synchronized(() async {
       if (clearStorage) {
         await remove(pendingStoreKey);
-        await remove(readyForUploadStoreKey);
+        await remove(readyForUploadingStoreKey);
         await remove(processingStoreKey);
         await remove(completeStoreKey);
         await remove(failedStoreKey);
@@ -92,8 +92,8 @@ extension SharedPreferencesUtils on SharedPreferences {
     return _getFilesForKey(pendingStoreKey).toList();
   }
 
-  List<UploadingModel> getReadyForUploadUploading() {
-    return _getFilesForKey(readyForUploadStoreKey).toList();
+  List<UploadingModel> getReadyForUploading() {
+    return _getFilesForKey(readyForUploadingStoreKey).toList();
   }
 
   List<UploadingModel> getProcessingUploading() {
@@ -166,21 +166,36 @@ extension SharedPreferencesUtils on SharedPreferences {
 
   Future<void> addFileToReadyForUpload({required UploadingModel uploadingModel}) async {
     await removeFile(uploadingModel, pendingStoreKey);
-    await _updateMapEntry(uploadingModel, readyForUploadStoreKey);
+    await _updateMapEntry(uploadingModel, readyForUploadingStoreKey);
   }
 
   Future<void> addFileToProcessing({required UploadingModel uploadingModel}) async {
-    await removeFile(uploadingModel, readyForUploadStoreKey);
+    await removeFile(uploadingModel, readyForUploadingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
     await removeFile(uploadingModel, completeStoreKey);
     await _updateMapEntry(uploadingModel, processingStoreKey);
   }
 
   Future<void> addFileToComplete({required UploadingModel uploadingModel}) async {
-    await removeFile(uploadingModel, readyForUploadStoreKey);
+    await removeFile(uploadingModel, readyForUploadingStoreKey);
     await removeFile(uploadingModel, processingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
     await _updateMapEntry(uploadingModel, completeStoreKey);
+  }
+
+  Future<void> addFileToFailed({required UploadingModel uploadingModel}) async {
+    await removeFile(uploadingModel, readyForUploadingStoreKey);
+    await removeFile(uploadingModel, processingStoreKey);
+    await removeFile(uploadingModel, completeStoreKey);
+    await _updateMapEntry(uploadingModel, failedStoreKey);
+  }
+
+  Future<void> removeFileFromEveryStore(UploadingModel uploadingModel) async {
+    await removeFile(uploadingModel, pendingStoreKey);
+    await removeFile(uploadingModel, readyForUploadingStoreKey);
+    await removeFile(uploadingModel, processingStoreKey);
+    await removeFile(uploadingModel, completeStoreKey);
+    await removeFile(uploadingModel, failedStoreKey);
   }
 
   Future<bool> removeFile(UploadingModel uploadingModel, String storeKey) async {
@@ -194,13 +209,6 @@ extension SharedPreferencesUtils on SharedPreferences {
         return false;
       }
     });
-  }
-
-  Future<void> addFileToFailed({required UploadingModel uploadingModel}) async {
-    await removeFile(uploadingModel, readyForUploadStoreKey);
-    await removeFile(uploadingModel, processingStoreKey);
-    await removeFile(uploadingModel, completeStoreKey);
-    await _updateMapEntry(uploadingModel, failedStoreKey);
   }
 
   Future<bool> resetUploading() async {
