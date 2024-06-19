@@ -298,16 +298,19 @@ const oneKB = 1000;
 class CompressParams {
   final int relativeWidth;
   final int idealSize;
+  final bool saveExif;
 
   const CompressParams({
     this.relativeWidth = 1920,
     this.idealSize = 1000 * oneKB,
+    this.saveExif = true,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'relativeWidth': relativeWidth,
       'idealSize': idealSize,
+      'saveExif': saveExif,
     };
   }
 
@@ -315,6 +318,7 @@ class CompressParams {
     return CompressParams(
       relativeWidth: map['relativeWidth'] as int,
       idealSize: map['idealSize'] as int,
+      saveExif: map['saveExif'] as bool,
     );
   }
 }
