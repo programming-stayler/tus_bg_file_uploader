@@ -1,3 +1,7 @@
+## 0.0.26
+
+Fixed CompressParams model for old versions capability
+
 ## 0.0.25
 
 Added saving original exif of an image during compression
