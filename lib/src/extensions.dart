@@ -318,7 +318,7 @@ class CompressParams {
     return CompressParams(
       relativeWidth: map['relativeWidth'] as int,
       idealSize: map['idealSize'] as int,
-      saveExif: map['saveExif'] as bool,
+      saveExif: (map['saveExif'] ?? true) as bool,
     );
   }
 }
