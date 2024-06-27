@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -13,6 +12,7 @@ import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_bg_file_uploader/src/image_compressor.dart';
 import 'package:tus_file_uploader/tus_file_uploader.dart';
+import 'package:collection/collection.dart';
 
 import 'extensions.dart';
 
@@ -63,8 +63,6 @@ class TusBGFileUploaderManager {
   static final _instance = TusBGFileUploaderManager._();
   @pragma('vm:entry-point')
   static final _objectsCache = <String, dynamic>{};
-  @pragma('vm:entry-point')
-  static final cache = <int, TusFileUploader>{};
 
   @pragma('vm:entry-point')
   TusBGFileUploaderManager._();
@@ -239,6 +237,17 @@ class TusBGFileUploaderManager {
     }
   }
 
+  void stopService() async {
+    final service = FlutterBackgroundService();
+    service.invoke("stop");
+  }
+
+  Future<bool> clearStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return prefs.clearStorage();
+  }
+
   // BACKGROUND ------------------------------------------------------------------------------------
   @pragma('vm:entry-point')
   static _onStart(ServiceInstance service) async {
@@ -256,7 +265,7 @@ class TusBGFileUploaderManager {
     if (service is bsa.AndroidServiceInstance) {
       service.setAsForegroundService();
     }
-    service.on('stopService').listen((_) => _dispose(service));
+    service.on('stop').listen((_) => _dispose(service));
 
     _uploadFilesCallback(service);
   }
@@ -370,26 +379,25 @@ class TusBGFileUploaderManager {
   static Future<void> _uploadFiles(
     SharedPreferences prefs,
     ServiceInstance service, [
-    Iterable<Future<TusFileUploader>> processingUploads = const [],
-    Iterable<Future<TusFileUploader>> failedUploads = const [],
+    Iterable<Future<TusFileUploader?>> processingUploads = const [],
+    Iterable<Future<TusFileUploader?>> failedUploads = const [],
   ]) async {
     await prefs.reload();
-    var readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
-    readyForUploadingUploads = readyForUploadingUploads.take(
-      min(readyForUploadingUploads.length, 5),
-    );
+    final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + readyForUploadingUploads.length + failedUploads.length;
     _buildLogger(prefs).d(
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
-      final uploaderList = await Future.wait([
+      final uploaderList = (await Future.wait([
         ...processingUploads,
         ...readyForUploadingUploads,
         ...failedUploads,
-      ]);
+      ]))
+          .whereNotNull();
       await Future.wait(uploaderList.map((uploader) => uploader.upload(headers: headers)));
+
       await _uploadFiles(prefs, service);
     }
   }
@@ -421,127 +429,137 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Iterable<Future<TusFileUploader>> _getProcessingUploads(
+  static List<Future<TusFileUploader?>> _getProcessingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
     final allUploadingFiles = prefs.getProcessingUploading();
     final filesToUpload = <UploadingModel>[];
-    final filesToRemove = <UploadingModel>[];
     for (var model in allUploadingFiles) {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
-        filesToRemove.add(model);
+        prefs.removeFile(model, processingStoreKey);
       }
-    }
-    for (var path in filesToRemove) {
-      prefs.removeFile(path, processingStoreKey);
     }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allUploadingFiles
-        .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
-        .map((model) async {
-      final uploader = await _uploaderFromPath(
-        service,
-        model,
-        metadata: metadata,
-        headers: headers,
-      );
-      cache[model.id] = uploader;
-      return uploader;
-    });
+    return filesToUpload
+        .map(
+          (model) => Future(
+            () => _prepareUploader(
+              service: service,
+              model: model,
+              metadata: metadata,
+              headers: headers,
+              prefs: prefs,
+              storeKey: processingStoreKey,
+            ),
+          ),
+        )
+        .toList();
   }
 
   @pragma('vm:entry-point')
-  static Iterable<Future<TusFileUploader>> _getReadyForUploadingUploads(
+  static List<Future<TusFileUploader?>> _getReadyForUploadingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
     final allReadyForUploadingFiles = prefs.getReadyForUploading();
     final filesToUpload = <UploadingModel>[];
-    final filesToRemove = <UploadingModel>[];
     for (var model in allReadyForUploadingFiles) {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
-        filesToRemove.add(model);
+        prefs.removeFile(model, readyForUploadingStoreKey);
       }
-    }
-    for (var path in filesToRemove) {
-      prefs.removeFile(path, readyForUploadingStoreKey);
     }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allReadyForUploadingFiles
-        .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
-        .map((model) async {
-      final uploader = await _uploaderFromPath(
-        service,
-        model,
-        metadata: metadata,
-        headers: headers,
-      );
-      cache[model.id] = uploader;
-      final uploadUrl = await uploader.setupUploadUrl();
-      if (uploadUrl != null) {
-        prefs.addFileToProcessing(uploadingModel: model);
-      } else {
-        prefs.removeFile(model, processingStoreKey);
-      }
-      return uploader;
-    });
+    return filesToUpload
+        .take(5)
+        .map(
+          (model) => Future(
+            () => _prepareUploader(
+              service: service,
+              model: model,
+              metadata: metadata,
+              headers: headers,
+              prefs: prefs,
+              storeKey: readyForUploadingStoreKey,
+            ),
+          ),
+        )
+        .toList();
   }
 
   @pragma('vm:entry-point')
-  static Iterable<Future<TusFileUploader>> _getFailedUploads(
+  static List<Future<TusFileUploader?>> _getFailedUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
     final allFailedFiles = prefs.getFailedUploading();
     final filesToUpload = <UploadingModel>[];
-    final filesToRemove = <UploadingModel>[];
     for (var model in allFailedFiles) {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
-        filesToRemove.add(model);
+        prefs.removeFile(model, failedStoreKey);
       }
-    }
-    for (var path in filesToRemove) {
-      prefs.removeFile(path, failedStoreKey);
     }
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
-    return allFailedFiles
-        .where((e) => !cache.containsKey(e) && filesToUpload.contains(e))
-        .map((model) async {
-      final uploader = await _uploaderFromPath(
-        service,
-        model,
-        metadata: metadata,
-        headers: headers,
-      );
-      cache[model.id] = uploader;
-      final uploadUrl = await uploader.setupUploadUrl();
-      if (uploadUrl != null) {
-        prefs.addFileToProcessing(uploadingModel: model);
-      } else {
-        prefs.removeFile(model, processingStoreKey);
-      }
+    return filesToUpload
+        .map(
+          (model) => Future(
+            () => _prepareUploader(
+              service: service,
+              model: model,
+              metadata: metadata,
+              headers: headers,
+              prefs: prefs,
+              storeKey: failedStoreKey,
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  static Future<TusFileUploader?> _prepareUploader({
+    required ServiceInstance service,
+    required UploadingModel model,
+    required Map<String, String> metadata,
+    required Map<String, String> headers,
+    required SharedPreferences prefs,
+    required String storeKey,
+  }) async {
+    final uploader = await _uploaderFromPath(
+      service,
+      prefs,
+      model,
+      metadata: metadata,
+      headers: headers,
+    );
+    final uploadUrl = await uploader.setupUploadUrl();
+    if (uploadUrl != null) {
+      await prefs.addFileToProcessing(uploadingModel: model);
       return uploader;
-    });
+    } else {
+      if (storeKey == processingStoreKey) {
+        prefs.addFileToFailed(uploadingModel: model);
+      }
+      return null;
+    }
   }
 
   @pragma('vm:entry-point')
   static Future<TusFileUploader> _uploaderFromPath(
     ServiceInstance service,
+    SharedPreferences prefs,
     UploadingModel uploadingModel, {
     Map<String, String>? headers,
     Map<String, String>? metadata,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
     var filePath = uploadingModel.path;
     final xFile = XFile(filePath);
     final totalBytes = await xFile.length();
@@ -654,9 +672,8 @@ class TusBGFileUploaderManager {
 
   @pragma('vm:entry-point')
   static Future _dispose(ServiceInstance service) async {
-    await Future.delayed(const Duration(seconds: 2)).whenComplete(
-        () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
     service.stopSelf();
-    cache.clear();
+    Future.delayed(const Duration(seconds: 2)).whenComplete(
+        () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
   }
 }
