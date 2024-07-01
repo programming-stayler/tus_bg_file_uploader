@@ -328,9 +328,7 @@ extension FileUtils on File {
     final dirPath = '${(await getApplicationDocumentsDirectory()).path}/$managerDocumentsDir';
     Directory(dirPath).createSync(recursive: true);
     final documentsFullPath = '$dirPath/${DateTime.now().millisecondsSinceEpoch}$hashCode.jpg';
-    final result = await copy(documentsFullPath);
-    await delete();
-    return result;
+    return await copy(documentsFullPath);
   }
 
   Future<bool> safeDelete() async {

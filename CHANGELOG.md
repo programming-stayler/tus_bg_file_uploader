@@ -1,3 +1,7 @@
+## 0.0.27
+
+Fixed uploading file on Android
+
 ## 0.0.26
 
 Fixed CompressParams model for old versions capability
