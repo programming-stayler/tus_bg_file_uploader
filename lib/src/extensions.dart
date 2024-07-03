@@ -16,7 +16,6 @@ const baseUrlStoreKey = 'base_files_uploading_url';
 const failOnLostConnectionStoreKey = 'fail_on_lost_connection';
 const compressParamsKey = 'compress_params';
 const appIconStoreKey = 'app_icon';
-const customSchemeKey = 'custom_scheme';
 const metadataKey = 'metadata';
 const headersKey = 'headers';
 const timeoutKey = 'timeout';
@@ -28,16 +27,9 @@ extension SharedPreferencesUtils on SharedPreferences {
 
   // PUBLIC ----------------------------------------------------------------------------------------
   Future<void> init({required bool clearStorage}) async {
-    return lock.synchronized(() async {
-      if (clearStorage) {
-        await remove(pendingStoreKey);
-        await remove(readyForUploadingStoreKey);
-        await remove(processingStoreKey);
-        await remove(completeStoreKey);
-        await remove(failedStoreKey);
-        DirectoryUtils.deleteManagerDocumentsDir();
-      }
-    });
+    if (clearStorage) {
+      this.clearStorage();
+    }
   }
 
   bool getUploadAfterStartingService() {
@@ -291,6 +283,27 @@ extension SharedPreferencesUtils on SharedPreferences {
       return setStringList(storeKey, result.map((e) => jsonEncode(e.toJson())).toList());
     });
   }
+
+  Future<bool> clearStorage() async {
+    return lock.synchronized(() async {
+      final pendingCleared = await remove(pendingStoreKey);
+      final readyForUploadingCleared = await remove(readyForUploadingStoreKey);
+      final processingCleared = await remove(processingStoreKey);
+      final completeCleared = await remove(completeStoreKey);
+      final failedCleared = await remove(failedStoreKey);
+      final metadataCleared = await remove(metadataKey);
+      final headersCleared = await remove(headersKey);
+      final managerDirectoryCleared = await DirectoryUtils.deleteManagerDocumentsDir();
+      return pendingCleared &&
+          readyForUploadingCleared &&
+          processingCleared &&
+          completeCleared &&
+          failedCleared &&
+          metadataCleared &&
+          headersCleared &&
+          managerDirectoryCleared;
+    });
+  }
 }
 
 const oneKB = 1000;
@@ -328,7 +341,7 @@ extension FileUtils on File {
     final dirPath = '${(await getApplicationDocumentsDirectory()).path}/$managerDocumentsDir';
     Directory(dirPath).createSync(recursive: true);
     final documentsFullPath = '$dirPath/${DateTime.now().millisecondsSinceEpoch}$hashCode.jpg';
-    return await copy(documentsFullPath);
+    return copy(documentsFullPath);
   }
 
   Future<bool> safeDelete() async {

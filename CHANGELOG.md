@@ -1,6 +1,10 @@
+## 0.0.28
+
+Improved paralleling photos uploading
+
 ## 0.0.27
 
-Fixed uploading file on Android
+Improved paralleling photos uploading
 
 ## 0.0.26
 
