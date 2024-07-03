@@ -1,3 +1,11 @@
+## 0.0.28
+
+Improved paralleling photos uploading
+
+## 0.0.27
+
+Improved paralleling photos uploading
+
 ## 0.0.26
 
 Fixed CompressParams model for old versions capability

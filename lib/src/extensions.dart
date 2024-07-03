@@ -229,12 +229,11 @@ extension SharedPreferencesUtils on SharedPreferences {
     return uploads;
   }
 
-  Future<void> _actualizeUploadsRecursively(
-    List<UploadingModel> models,
-    String key,
-    String rootPath, [
-    int index = 0,
-  ]) async {
+  Future<void> _actualizeUploadsRecursively(List<UploadingModel> models,
+      String key,
+      String rootPath, [
+        int index = 0,
+      ]) async {
     if (index >= models.length) {
       return;
     }
@@ -340,7 +339,9 @@ extension FileUtils on File {
   Future<File> saveToDocumentsDir() async {
     final dirPath = '${(await getApplicationDocumentsDirectory()).path}/$managerDocumentsDir';
     Directory(dirPath).createSync(recursive: true);
-    final documentsFullPath = '$dirPath/${DateTime.now().millisecondsSinceEpoch}$hashCode.jpg';
+    final documentsFullPath = '$dirPath/${DateTime
+        .now()
+        .millisecondsSinceEpoch}$hashCode.jpg';
     return copy(documentsFullPath);
   }
 

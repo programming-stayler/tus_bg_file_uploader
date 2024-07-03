@@ -389,12 +389,13 @@ class TusBGFileUploaderManager {
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
-      final uploaderList = await Future.wait([
+      final futureUploaderList = [
         ...processingUploads,
         ...readyForUploadingUploads,
         ...failedUploads,
-      ]);
-      for (final uploader in uploaderList) {
+      ];
+      for (final futureUploader in futureUploaderList) {
+        final uploader = await futureUploader;
         await uploader.upload(headers: headers);
       }
 
@@ -487,6 +488,7 @@ class TusBGFileUploaderManager {
               headers: headers,
               prefs: prefs,
               storeKey: readyForUploadingStoreKey,
+              setupUrlIfNeeded: true,
             ),
           ),
         )
@@ -519,6 +521,7 @@ class TusBGFileUploaderManager {
               headers: headers,
               prefs: prefs,
               storeKey: failedStoreKey,
+              setupUrlIfNeeded: true,
             ),
           ),
         )
@@ -532,6 +535,7 @@ class TusBGFileUploaderManager {
     required Map<String, String> headers,
     required SharedPreferences prefs,
     required String storeKey,
+    bool setupUrlIfNeeded = false,
   }) async {
     final uploader = await _uploaderFromPath(
       service,
@@ -540,6 +544,9 @@ class TusBGFileUploaderManager {
       metadata: metadata,
       headers: headers,
     );
+    if (setupUrlIfNeeded && model.uploadUrl == null) {
+      await uploader.setupUploadUrl();
+    }
     await prefs.addFileToProcessing(uploadingModel: model);
     return uploader;
   }
