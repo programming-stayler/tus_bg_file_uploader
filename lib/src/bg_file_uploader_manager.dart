@@ -389,12 +389,13 @@ class TusBGFileUploaderManager {
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
-      final uploaderList = await Future.wait([
+      final futureUploaderList = [
         ...processingUploads,
         ...readyForUploadingUploads,
         ...failedUploads,
-      ]);
-      for (final uploader in uploaderList) {
+      ];
+      for (final futureUploader in futureUploaderList) {
+        final uploader = await futureUploader;
         await uploader.upload(headers: headers);
       }
 
@@ -477,7 +478,6 @@ class TusBGFileUploaderManager {
     final metadata = prefs.getMetadata();
     final headers = prefs.getHeaders();
     return filesToUpload
-        .take(5)
         .map(
           (model) => Future(
             () => _prepareUploader(
@@ -540,6 +540,7 @@ class TusBGFileUploaderManager {
       metadata: metadata,
       headers: headers,
     );
+    await uploader.setupUploadUrl();
     await prefs.addFileToProcessing(uploadingModel: model);
     return uploader;
   }
