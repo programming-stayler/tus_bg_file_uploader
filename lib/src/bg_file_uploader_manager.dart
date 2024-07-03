@@ -12,7 +12,6 @@ import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_bg_file_uploader/src/image_compressor.dart';
 import 'package:tus_file_uploader/tus_file_uploader.dart';
-import 'package:collection/collection.dart';
 
 import 'extensions.dart';
 
@@ -379,8 +378,8 @@ class TusBGFileUploaderManager {
   static Future<void> _uploadFiles(
     SharedPreferences prefs,
     ServiceInstance service, [
-    Iterable<Future<TusFileUploader?>> processingUploads = const [],
-    Iterable<Future<TusFileUploader?>> failedUploads = const [],
+    Iterable<Future<TusFileUploader>> processingUploads = const [],
+    Iterable<Future<TusFileUploader>> failedUploads = const [],
   ]) async {
     await prefs.reload();
     final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
@@ -390,13 +389,14 @@ class TusBGFileUploaderManager {
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
-      final uploaderList = (await Future.wait([
+      final uploaderList = await Future.wait([
         ...processingUploads,
         ...readyForUploadingUploads,
         ...failedUploads,
-      ]))
-          .whereNotNull();
-      await Future.wait(uploaderList.map((uploader) => uploader.upload(headers: headers)));
+      ]);
+      for (final uploader in uploaderList) {
+        await uploader.upload(headers: headers);
+      }
 
       await _uploadFiles(prefs, service);
     }
@@ -429,7 +429,7 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static List<Future<TusFileUploader?>> _getProcessingUploads(
+  static List<Future<TusFileUploader>> _getProcessingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -461,7 +461,7 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static List<Future<TusFileUploader?>> _getReadyForUploadingUploads(
+  static List<Future<TusFileUploader>> _getReadyForUploadingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -494,7 +494,7 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static List<Future<TusFileUploader?>> _getFailedUploads(
+  static List<Future<TusFileUploader>> _getFailedUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -525,7 +525,7 @@ class TusBGFileUploaderManager {
         .toList();
   }
 
-  static Future<TusFileUploader?> _prepareUploader({
+  static Future<TusFileUploader> _prepareUploader({
     required ServiceInstance service,
     required UploadingModel model,
     required Map<String, String> metadata,
@@ -540,16 +540,8 @@ class TusBGFileUploaderManager {
       metadata: metadata,
       headers: headers,
     );
-    final uploadUrl = await uploader.setupUploadUrl();
-    if (uploadUrl != null) {
-      await prefs.addFileToProcessing(uploadingModel: model);
-      return uploader;
-    } else {
-      if (storeKey == processingStoreKey) {
-        prefs.addFileToFailed(uploadingModel: model);
-      }
-      return null;
-    }
+    await prefs.addFileToProcessing(uploadingModel: model);
+    return uploader;
   }
 
   @pragma('vm:entry-point')
