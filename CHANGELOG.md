@@ -1,3 +1,7 @@
+## 0.0.29
+
+Updated tus_file_uploader lib
+
 ## 0.0.28
 
 Improved paralleling photos uploading
