@@ -378,8 +378,8 @@ class TusBGFileUploaderManager {
   static Future<void> _uploadFiles(
     SharedPreferences prefs,
     ServiceInstance service, [
-    Iterable<Future<TusFileUploader>> processingUploads = const [],
-    Iterable<Future<TusFileUploader>> failedUploads = const [],
+    Iterable<UploadingModel> processingUploads = const [],
+    Iterable<UploadingModel> failedUploads = const [],
   ]) async {
     await prefs.reload();
     final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
@@ -389,13 +389,13 @@ class TusBGFileUploaderManager {
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
-      final futureUploaderList = [
+      final uploadingModels = [
         ...processingUploads,
         ...readyForUploadingUploads,
         ...failedUploads,
       ];
-      for (final futureUploader in futureUploaderList) {
-        final uploader = await futureUploader;
+      for (final uploadingModel in uploadingModels) {
+        final uploader = await _prepareUploader(service: service, model: uploadingModel, prefs: prefs);
         await uploader.upload(headers: headers);
       }
 
@@ -430,7 +430,7 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static List<Future<TusFileUploader>> _getProcessingUploads(
+  static List<UploadingModel> _getProcessingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -443,26 +443,11 @@ class TusBGFileUploaderManager {
         prefs.removeFile(model, processingStoreKey);
       }
     }
-    final metadata = prefs.getMetadata();
-    final headers = prefs.getHeaders();
-    return filesToUpload
-        .map(
-          (model) => Future(
-            () => _prepareUploader(
-              service: service,
-              model: model,
-              metadata: metadata,
-              headers: headers,
-              prefs: prefs,
-              storeKey: processingStoreKey,
-            ),
-          ),
-        )
-        .toList();
+    return filesToUpload;
   }
 
   @pragma('vm:entry-point')
-  static List<Future<TusFileUploader>> _getReadyForUploadingUploads(
+  static List<UploadingModel> _getReadyForUploadingUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -475,28 +460,11 @@ class TusBGFileUploaderManager {
         prefs.removeFile(model, readyForUploadingStoreKey);
       }
     }
-    final metadata = prefs.getMetadata();
-    final headers = prefs.getHeaders();
-    return filesToUpload
-        .take(5)
-        .map(
-          (model) => Future(
-            () => _prepareUploader(
-              service: service,
-              model: model,
-              metadata: metadata,
-              headers: headers,
-              prefs: prefs,
-              storeKey: readyForUploadingStoreKey,
-              setupUrlIfNeeded: true,
-            ),
-          ),
-        )
-        .toList();
+    return filesToUpload;
   }
 
   @pragma('vm:entry-point')
-  static List<Future<TusFileUploader>> _getFailedUploads(
+  static List<UploadingModel> _getFailedUploads(
     SharedPreferences prefs,
     ServiceInstance service,
   ) {
@@ -509,44 +477,20 @@ class TusBGFileUploaderManager {
         prefs.removeFile(model, failedStoreKey);
       }
     }
-    final metadata = prefs.getMetadata();
-    final headers = prefs.getHeaders();
-    return filesToUpload
-        .map(
-          (model) => Future(
-            () => _prepareUploader(
-              service: service,
-              model: model,
-              metadata: metadata,
-              headers: headers,
-              prefs: prefs,
-              storeKey: failedStoreKey,
-              setupUrlIfNeeded: true,
-            ),
-          ),
-        )
-        .toList();
+    return filesToUpload;
   }
 
   static Future<TusFileUploader> _prepareUploader({
     required ServiceInstance service,
     required UploadingModel model,
-    required Map<String, String> metadata,
-    required Map<String, String> headers,
     required SharedPreferences prefs,
-    required String storeKey,
-    bool setupUrlIfNeeded = false,
   }) async {
     final uploader = await _uploaderFromPath(
       service,
       prefs,
       model,
-      metadata: metadata,
-      headers: headers,
     );
-    if (setupUrlIfNeeded && model.uploadUrl == null) {
-      await uploader.setupUploadUrl();
-    }
+    await uploader.setupUploadUrl();
     await prefs.addFileToProcessing(uploadingModel: model);
     return uploader;
   }
@@ -555,15 +499,15 @@ class TusBGFileUploaderManager {
   static Future<TusFileUploader> _uploaderFromPath(
     ServiceInstance service,
     SharedPreferences prefs,
-    UploadingModel uploadingModel, {
-    Map<String, String>? headers,
-    Map<String, String>? metadata,
-  }) async {
+    UploadingModel uploadingModel,
+  ) async {
     var filePath = uploadingModel.path;
+    final metadata = prefs.getMetadata();
+    final headers = prefs.getHeaders();
     final xFile = XFile(filePath);
     final totalBytes = await xFile.length();
     final uploadMetadata = xFile.generateMetadata(originalMetadata: metadata);
-    final resultHeaders = Map<String, String>.from(headers ?? {})
+    final resultHeaders = Map<String, String>.from(headers)
       ..addAll({
         "Tus-Resumable": tusVersion,
         "Upload-Metadata": uploadMetadata,
