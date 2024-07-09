@@ -1,3 +1,7 @@
+## 0.0.30
+
+Improvements to uploading process
+
 ## 0.0.29
 
 Updated tus_file_uploader lib

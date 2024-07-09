@@ -571,15 +571,15 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "0.0.28"
+    version: "0.0.30"
   tus_file_uploader:
     dependency: transitive
     description:
       name: tus_file_uploader
-      sha256: "4925e0147b10ea67bfd60858fbe54d20b6826753b282c8e355c5bbcc35a9eefd"
+      sha256: "1f6f8c1135d0aceeec3c7fce0f3b84ec6169cae6c45f00f8c242f1124adf78a3"
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.27"
+    version: "0.0.29"
   typed_data:
     dependency: transitive
     description:
