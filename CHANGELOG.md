@@ -1,3 +1,7 @@
+## 0.0.31
+
+Fixed rotation issue during compression
+
 ## 0.0.30
 
 Improvements to uploading process

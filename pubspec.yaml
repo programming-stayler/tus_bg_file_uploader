@@ -1,7 +1,7 @@
 name: tus_bg_file_uploader
 description: A wrapper around tus_file_uploader that allows to upload file using background service
 
-version: 0.0.30
+version: 0.0.31
 
 homepage: https://github.com/programming-stayler/tus_bg_file_uploader
 
