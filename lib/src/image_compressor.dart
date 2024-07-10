@@ -51,8 +51,8 @@ class ImageCompressor {
         targetPath,
         minWidth: finalWidth,
         minHeight: finalHeight,
+        autoCorrectionAngle: false,
         quality: quality.toInt(),
-        keepExif: true,
       );
       if (xFile != null) {
         final resultLength = await xFile.length();
@@ -77,6 +77,7 @@ class ImageCompressor {
   static Future<Map<String, Object>?> _persistExifAttrs(String path) async {
     final exif = await Exif.fromPath(path);
     Map<String, Object>? exifAttrs = await exif.getAttributes();
+    if(Platform.isIOS) exifAttrs?.remove('Orientation');
     exif.close();
     return exifAttrs;
   }
