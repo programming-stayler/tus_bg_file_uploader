@@ -30,8 +30,7 @@ class ImageCompressor {
       final timeStamp = DateTime.now().millisecondsSinceEpoch;
       final targetPath = '${rootDir.path}/$managerDocumentsDir/$timeStamp${file.hashCode}.jpg';
       final relation = params.idealSize / length;
-      final qualityKoef = 0.75 * relation;
-      final quality = (qualityKoef + relation) * 100;
+      final quality = relation * 100;
       final bytes = await file.readAsBytes();
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       final descriptor = await ui.ImageDescriptor.encoded(buffer);
