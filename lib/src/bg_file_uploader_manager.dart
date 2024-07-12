@@ -9,6 +9,7 @@ import 'package:flutter_background_service_android/flutter_background_service_an
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logger/logger.dart';
+import 'package:logger/web.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_bg_file_uploader/src/image_compressor.dart';
 import 'package:tus_file_uploader/tus_file_uploader.dart';
@@ -21,6 +22,7 @@ const _failureStream = 'failure_stream';
 const _authFailureStream = 'auth_stream';
 const _serverErrorStream = 'server_error';
 const _updatePathStream = 'update_page_stream';
+const _logsStream = 'logs_stream';
 const managerDocumentsDir = 'bgFileUploaderManager';
 
 @pragma('vm:entry-point')
@@ -92,6 +94,10 @@ class TusBGFileUploaderManager {
 
   Stream<Map<String, dynamic>?> get updatePathStream => FlutterBackgroundService().on(
         _updatePathStream,
+      );
+
+  Stream<Map<String, dynamic>?> get logsStream => FlutterBackgroundService().on(
+        _logsStream,
       );
 
   Future<void> setup(
@@ -224,9 +230,7 @@ class TusBGFileUploaderManager {
     final unfinishedFiles = await checkForUnfinishedUploads();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setUploadAfterStartingService(true);
-    _buildLogger(prefs).d(
-      "RESUME UPLOADING\n=> Unfinished files: ${unfinishedFiles.length}",
-    );
+
     if (unfinishedFiles.isEmpty) return;
 
     final service = FlutterBackgroundService();
@@ -234,11 +238,15 @@ class TusBGFileUploaderManager {
     if (!isRunning) {
       await service.startService();
     }
+    _buildLogger(prefs).d(
+      "RESUME UPLOADING\n=> Unfinished files: ${unfinishedFiles.length}",
+    );
   }
 
   void stopService() async {
     final service = FlutterBackgroundService();
     service.invoke("stop");
+    (_objectsCache["logger"] as Logger?)?.close();
   }
 
   Future<bool> clearStorage() async {
@@ -385,7 +393,7 @@ class TusBGFileUploaderManager {
     final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + readyForUploadingUploads.length + failedUploads.length;
-    _buildLogger(prefs).d(
+    _buildLogger(prefs, service: service).d(
       "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
     );
     if (total > 0) {
@@ -395,7 +403,8 @@ class TusBGFileUploaderManager {
         ...failedUploads,
       ];
       for (final uploadingModel in uploadingModels) {
-        final uploader = await _prepareUploader(service: service, model: uploadingModel, prefs: prefs);
+        final uploader =
+            await _prepareUploader(service: service, model: uploadingModel, prefs: prefs);
         await uploader.upload(headers: headers);
       }
 
@@ -420,7 +429,10 @@ class TusBGFileUploaderManager {
           sharedPreferences,
           persistedFile.path,
           compressParams,
-          _buildLogger(sharedPreferences),
+          _buildLogger(
+            sharedPreferences,
+            service: service,
+          ),
         );
       }
       model.path = compressedFile?.path ?? persistedFile.path;
@@ -553,8 +565,11 @@ class TusBGFileUploaderManager {
   }
 
   @pragma('vm:entry-point')
-  static Logger _buildLogger(SharedPreferences prefs) {
-    var logger = _objectsCache["logger"];
+  static Logger _buildLogger(
+    SharedPreferences prefs, {
+    ServiceInstance? service,
+  }) {
+    var logger = _objectsCache["logger"] as Logger?;
     if (logger == null) {
       final loggerLevel = prefs.getLoggerLevel();
       final Level level;
@@ -580,8 +595,12 @@ class TusBGFileUploaderManager {
       );
       _objectsCache["logger"] = logger;
       _objectsCache["logger_level"] = level;
+      Logger.addLogListener((event) {
+        final sender = service ?? FlutterBackgroundService();
+        sender.invoke(_logsStream, {event.level.name: event.message});
+      });
     }
-    return logger!;
+    return logger;
   }
 
   @pragma('vm:entry-point')
@@ -616,6 +635,7 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static Future _dispose(ServiceInstance service) async {
     service.stopSelf();
+    (_objectsCache["logger"] as Logger?)?.close();
     Future.delayed(const Duration(seconds: 2)).whenComplete(
         () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
   }
