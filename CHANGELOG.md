@@ -1,3 +1,11 @@
+## 0.0.33
+
+Added logsStream for transferring logs outside plugin
+
+## 0.0.32
+
+Fixed compression quality param calculation
+
 ## 0.0.31
 
 Fixed rotation issue during compression

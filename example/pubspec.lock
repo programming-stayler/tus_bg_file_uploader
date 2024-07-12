@@ -571,7 +571,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "0.0.31"
+    version: "0.0.33"
   tus_file_uploader:
     dependency: transitive
     description:

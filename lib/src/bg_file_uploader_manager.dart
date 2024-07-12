@@ -9,7 +9,6 @@ import 'package:flutter_background_service_android/flutter_background_service_an
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logger/logger.dart';
-import 'package:logger/web.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_bg_file_uploader/src/image_compressor.dart';
 import 'package:tus_file_uploader/tus_file_uploader.dart';
