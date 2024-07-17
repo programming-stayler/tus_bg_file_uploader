@@ -206,22 +206,22 @@ class TusBGFileUploaderManager {
 
   Future<void> removeFileById(int modelId) async {
     final prefs = await SharedPreferences.getInstance();
-    final allModels = [
-      ...prefs.getPendingUploading(),
-      ...prefs.getReadyForUploading(),
-      ...prefs.getProcessingUploading(),
-      ...prefs.getCompleteUploading(),
-      ...prefs.getFailedUploading(),
+    final storeKeys = [
+      pendingStoreKey,
+      readyForUploadingStoreKey,
+      processingStoreKey,
+      completeStoreKey,
+      failedStoreKey,
     ];
-    UploadingModel? model;
-    for (final m in allModels) {
-      if (m.id == modelId) {
-        model = m;
-        break;
+    for (final storeKey in storeKeys) {
+      final allFiles = prefs.getFilesForKey(storeKey);
+      for (final model in allFiles) {
+        if (model.id == modelId) {
+          prefs.removeFile(model, storeKey);
+          if (storeKey != pendingStoreKey) File(model.path).safeDelete();
+          break;
+        }
       }
-    }
-    if (model != null) {
-      prefs.removeFileFromEveryStore(model);
     }
   }
 
@@ -303,7 +303,6 @@ class TusBGFileUploaderManager {
     required String uploadUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    File(uploadingModel.path).safeDelete();
     await prefs.addFileToComplete(uploadingModel: uploadingModel);
     await _updateProgress(currentFileProgress: 1);
     service.invoke(_completionStream, {'id': uploadingModel.id, 'url': uploadUrl});
