@@ -1,3 +1,7 @@
+## 0.0.35
+
+Updated tus lib version
+
 ## 0.0.34
 
 Moved deleting persisted File from '_onNextFileComplete' to 'removeFileById' method
