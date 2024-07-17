@@ -1,3 +1,7 @@
+## 0.0.34
+
+Moved deleting persisted File from '_onNextFileComplete' to 'removeFileById' method
+
 ## 0.0.33
 
 Added logsStream for transferring logs outside plugin
