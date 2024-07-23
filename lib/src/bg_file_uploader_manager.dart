@@ -35,6 +35,8 @@ enum _NotificationIds {
   const _NotificationIds(this.id);
 }
 
+final cache = <int, TusFileUploader>{};
+
 Future<void> initAndroidNotifChannel() async {
   await FlutterLocalNotificationsPlugin().initialize(
     const InitializationSettings(
@@ -206,6 +208,7 @@ class TusBGFileUploaderManager {
 
   Future<void> removeFileById(int modelId) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final storeKeys = [
       pendingStoreKey,
       readyForUploadingStoreKey,
@@ -218,7 +221,7 @@ class TusBGFileUploaderManager {
       for (final model in allFiles) {
         if (model.id == modelId) {
           prefs.removeFile(model, storeKey);
-          if (storeKey != pendingStoreKey) File(model.path).safeDelete();
+          if (storeKey != pendingStoreKey) model.fileSync?.safeDelete();
           break;
         }
       }
@@ -254,6 +257,11 @@ class TusBGFileUploaderManager {
     return prefs.clearStorage();
   }
 
+  void cancelUpload(int uploadingId) {
+    final service = FlutterBackgroundService();
+    service.invoke("cancelUpload", {"id": uploadingId});
+  }
+
   // BACKGROUND ------------------------------------------------------------------------------------
   @pragma('vm:entry-point')
   static _onStart(ServiceInstance service) async {
@@ -272,6 +280,13 @@ class TusBGFileUploaderManager {
       service.setAsForegroundService();
     }
     service.on('stop').listen((_) => _dispose(service));
+    service.on('cancelUpload').listen((data) async {
+      if (data == null) return;
+      final id = data['id'] as int;
+      final uploader = cache.remove(id);
+      uploader?.cancel();
+      // if (cache.isEmpty) _dispose(service);
+    });
 
     _uploadFilesCallback(service);
   }
@@ -305,20 +320,20 @@ class TusBGFileUploaderManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.addFileToComplete(uploadingModel: uploadingModel);
     await _updateProgress(currentFileProgress: 1);
+    cache.remove(uploadingModel.id);
     service.invoke(_completionStream, {'id': uploadingModel.id, 'url': uploadUrl});
   }
 
   @pragma('vm:entry-point')
   static Future<void> _onProgress({
     required UploadingModel uploadingModel,
-    required double progress,
     required ServiceInstance service,
   }) async {
     service.invoke(_progressStream, {
       "id": uploadingModel.id,
-      "progress": (progress * 100).toInt(),
+      "progress": (uploadingModel.progress * 100).toInt(),
     });
-    await _updateProgress(currentFileProgress: progress);
+    await _updateProgress(currentFileProgress: uploadingModel.progress);
   }
 
   @pragma('vm:entry-point')
@@ -403,7 +418,7 @@ class TusBGFileUploaderManager {
       for (final uploadingModel in uploadingModels) {
         final uploader =
             await _prepareUploader(service: service, model: uploadingModel, prefs: prefs);
-        await uploader.upload(headers: headers);
+        await uploader?.upload(headers: headers);
       }
 
       await _uploadFiles(prefs, service);
@@ -451,6 +466,7 @@ class TusBGFileUploaderManager {
         filesToUpload.add(model);
       } else {
         prefs.removeFile(model, processingStoreKey);
+        cache.remove(model.id);
       }
     }
     return filesToUpload;
@@ -468,6 +484,7 @@ class TusBGFileUploaderManager {
         filesToUpload.add(model);
       } else {
         prefs.removeFile(model, readyForUploadingStoreKey);
+        cache.remove(model.id);
       }
     }
     return filesToUpload;
@@ -485,24 +502,39 @@ class TusBGFileUploaderManager {
         filesToUpload.add(model);
       } else {
         prefs.removeFile(model, failedStoreKey);
+        cache.remove(model.id);
       }
     }
     return filesToUpload;
   }
 
-  static Future<TusFileUploader> _prepareUploader({
+  static Future<TusFileUploader?> _prepareUploader({
     required ServiceInstance service,
     required UploadingModel model,
     required SharedPreferences prefs,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final allModels = [
+      ...prefs.getPendingUploading(),
+      ...prefs.getReadyForUploading(),
+      ...prefs.getProcessingUploading(),
+    ];
+
+    if (!allModels.contains(model)) return null;
+
     final uploader = await _uploaderFromPath(
       service,
       prefs,
       model,
     );
     await uploader.setupUploadUrl();
-    await prefs.addFileToProcessing(uploadingModel: model);
-    return uploader;
+    if (uploader.uploadingIsCanceled) {
+      return null;
+    } else {
+      await prefs.addFileToProcessing(uploadingModel: model);
+      return uploader;
+    }
   }
 
   @pragma('vm:entry-point')
@@ -530,16 +562,15 @@ class TusBGFileUploaderManager {
     }
     final failOnLostConnection = prefs.getFailOnLostConnection();
     final loggerLevel = _objectsCache["logger_level"] ?? Level.off;
-    return TusFileUploader(
+    final uploader = TusFileUploader(
       uploadingModel: uploadingModel,
       timeout: timeout,
       baseUrl: baseUrl,
       headers: resultHeaders,
       failOnLostConnection: failOnLostConnection,
       loggerLevel: loggerLevel,
-      progressCallback: (uploadingModel, progress) async => _onProgress(
+      progressCallback: (uploadingModel) async => _onProgress(
         uploadingModel: uploadingModel,
-        progress: progress,
         service: service,
       ),
       completeCallback: (uploadingModel, uploadUrl) async => _onNextFileComplete(
@@ -560,6 +591,8 @@ class TusBGFileUploaderManager {
         service: service,
       ),
     );
+    cache[uploadingModel.id] = uploader;
+    return uploader;
   }
 
   @pragma('vm:entry-point')
@@ -634,6 +667,7 @@ class TusBGFileUploaderManager {
   static Future _dispose(ServiceInstance service) async {
     service.stopSelf();
     (_objectsCache["logger"] as Logger?)?.close();
+    cache.clear();
     Future.delayed(const Duration(seconds: 2)).whenComplete(
         () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
   }
