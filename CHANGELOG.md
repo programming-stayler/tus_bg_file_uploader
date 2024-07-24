@@ -1,3 +1,7 @@
+## 0.0.36
+
+Fixed restoring uploading process when internet connection changes
+
 ## 0.0.35
 
 Updated tus lib version

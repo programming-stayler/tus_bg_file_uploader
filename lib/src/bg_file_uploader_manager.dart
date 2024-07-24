@@ -20,7 +20,8 @@ const _completionStream = 'completion_stream';
 const _failureStream = 'failure_stream';
 const _authFailureStream = 'auth_stream';
 const _serverErrorStream = 'server_error';
-const _updatePathStream = 'update_page_stream';
+const _updatePathStream = 'update_path_stream';
+const _allFilesUploadedStream = 'all_files_uploaded_stream';
 const _logsStream = 'logs_stream';
 const managerDocumentsDir = 'bgFileUploaderManager';
 
@@ -95,6 +96,10 @@ class TusBGFileUploaderManager {
         _updatePathStream,
       );
 
+  Stream<Map<String, dynamic>?> get allFilesUploadedStream => FlutterBackgroundService().on(
+        _allFilesUploadedStream,
+      );
+
   Stream<Map<String, dynamic>?> get logsStream => FlutterBackgroundService().on(
         _logsStream,
       );
@@ -140,12 +145,6 @@ class TusBGFileUploaderManager {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     return prefs.actualizeUnfinishedUploads();
-  }
-
-  Future<List<UploadingModel>> checkForFailedUploads() async {
-    final prefs = await SharedPreferences.getInstance();
-    final failedUploads = prefs.getFailedUploading();
-    return failedUploads;
   }
 
   Future<void> uploadFiles({
@@ -391,9 +390,7 @@ class TusBGFileUploaderManager {
     final readyForUploadingUploads = _getReadyForUploadingUploads(prefs, service);
     final headers = prefs.getHeaders();
     final total = processingUploads.length + readyForUploadingUploads.length + failedUploads.length;
-    _buildLogger(prefs, service: service).d(
-      "UPLOADING FILES\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploadingUploads.length}\n=> Failed files: ${failedUploads.length}",
-    );
+    _logExistingFiles('TRY TO UPLOAD FILES', prefs, service: service);
     if (total > 0) {
       final uploadingModels = [
         ...processingUploads,
@@ -404,9 +401,13 @@ class TusBGFileUploaderManager {
         final uploader =
             await _prepareUploader(service: service, model: uploadingModel, prefs: prefs);
         await uploader.upload(headers: headers);
+        _logExistingFiles('NEXT FILE UPLOADED', prefs, service: service);
       }
-
-      await _uploadFiles(prefs, service);
+      final processingUploadsLeft = _getProcessingUploads(prefs, service);
+      await _uploadFiles(prefs, service, processingUploadsLeft);
+    } else {
+      service.invoke(_allFilesUploadedStream);
+      _logExistingFiles('ALL FILES UPLOADED', prefs, service: service);
     }
   }
 
@@ -559,6 +560,22 @@ class TusBGFileUploaderManager {
         uploadingModel: uploadingModel,
         service: service,
       ),
+    );
+  }
+
+  @pragma('vm:entry-point')
+  static Future<void> _logExistingFiles(
+    String header,
+    SharedPreferences prefs, {
+    ServiceInstance? service,
+  }) async {
+    await prefs.reload();
+    final failedUploads = prefs.getFailedUploading();
+    final pendingUploads = prefs.getPendingUploading();
+    final readyForUploading = prefs.getReadyForUploading();
+    final processingUploads = prefs.getProcessingUploading();
+    _buildLogger(prefs, service: service).d(
+      "$header\n=> Pending files: ${pendingUploads.length}\n=> Processing files: ${processingUploads.length}\n=> Ready for upload files: ${readyForUploading.length}\n=> Failed files: ${failedUploads.length}",
     );
   }
 

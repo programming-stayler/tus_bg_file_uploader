@@ -36,7 +36,7 @@ class _AppState extends State<App> {
       if (filesJson != null) {
         files = filesJson.map((e) => FileModel.fromJson(jsonDecode(e))).toSet();
         final unfinishedModels = await uploadingManager.checkForUnfinishedUploads();
-        final failedModels = await uploadingManager.checkForFailedUploads();
+        final failedModels = await uploadingManager.checkForUnfinishedUploads();
         for (final model in failedModels) {
           final file = files.firstWhere((element) => element.path == model.path);
           file.failed = true;

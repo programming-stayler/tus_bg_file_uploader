@@ -153,12 +153,15 @@ extension SharedPreferencesUtils on SharedPreferences {
   }
 
   Future<void> addFileToPending({required UploadingModel uploadingModel}) async {
+    await removeFile(uploadingModel, readyForUploadingStoreKey);
+    await removeFile(uploadingModel, failedStoreKey);
     await _updateMapEntry(uploadingModel, pendingStoreKey);
   }
 
   Future<void> addFileToReadyForUpload({required UploadingModel uploadingModel}) async {
     await removeFile(uploadingModel, pendingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
+    await removeFile(uploadingModel, processingStoreKey);
     await _updateMapEntry(uploadingModel, readyForUploadingStoreKey);
   }
 
