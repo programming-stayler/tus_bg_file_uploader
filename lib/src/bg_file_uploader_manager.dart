@@ -144,7 +144,7 @@ class TusBGFileUploaderManager {
   Future<List<UploadingModel>> checkForUnfinishedUploads() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    return prefs.actualizeUnfinishedUploads();
+    return prefs.actualizeUnfinishedUploads(_buildLogger(prefs));
   }
 
   Future<void> uploadFiles({
@@ -157,7 +157,10 @@ class TusBGFileUploaderManager {
     await prefs.setUploadAfterStartingService(true);
 
     for (final model in uploadingModels) {
-      await prefs.addFileToPending(uploadingModel: model);
+      await prefs.addFileToPending(
+        uploadingModel: model,
+        logger: _buildLogger(prefs),
+      );
     }
 
     await prefs.setHeadersMetadata(headers: headers, metadata: metadata);
@@ -183,9 +186,15 @@ class TusBGFileUploaderManager {
     for (final model in allFailedFiles) {
       if (modelIds.contains(model.id)) {
         if (model.uploadUrl != null) {
-          await prefs.addFileToProcessing(uploadingModel: model);
+          await prefs.addFileToProcessing(
+            uploadingModel: model,
+            logger: _buildLogger(prefs),
+          );
         } else {
-          await prefs.addFileToReadyForUpload(uploadingModel: model);
+          await prefs.addFileToReadyForUpload(
+            uploadingModel: model,
+            logger: _buildLogger(prefs),
+          );
         }
       }
     }
@@ -216,7 +225,11 @@ class TusBGFileUploaderManager {
       final allFiles = prefs.getFilesForKey(storeKey);
       for (final model in allFiles) {
         if (model.id == modelId) {
-          prefs.removeFile(model, storeKey);
+          prefs.removeFile(
+            model,
+            storeKey,
+            _buildLogger(prefs),
+          );
           if (storeKey != pendingStoreKey) File(model.path).safeDelete();
           break;
         }
@@ -302,7 +315,10 @@ class TusBGFileUploaderManager {
     required String uploadUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.addFileToComplete(uploadingModel: uploadingModel);
+    await prefs.addFileToComplete(
+      uploadingModel: uploadingModel,
+      logger: _buildLogger(prefs),
+    );
     await _updateProgress(currentFileProgress: 1);
     service.invoke(_completionStream, {'id': uploadingModel.id, 'url': uploadUrl});
   }
@@ -311,11 +327,13 @@ class TusBGFileUploaderManager {
   static Future<void> _onProgress({
     required UploadingModel uploadingModel,
     required double progress,
+    required int lastChunkSize,
     required ServiceInstance service,
   }) async {
     service.invoke(_progressStream, {
       "id": uploadingModel.id,
       "progress": (progress * 100).toInt(),
+      "lastChunkSize": lastChunkSize,
     });
     await _updateProgress(currentFileProgress: progress);
   }
@@ -354,7 +372,10 @@ class TusBGFileUploaderManager {
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.addFileToFailed(uploadingModel: uploadingModel);
+    await prefs.addFileToFailed(
+      uploadingModel: uploadingModel,
+      logger: _buildLogger(prefs),
+    );
     service.invoke(_failureStream, {'id': uploadingModel.id});
   }
 
@@ -364,7 +385,10 @@ class TusBGFileUploaderManager {
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.addFileToFailed(uploadingModel: uploadingModel);
+    await prefs.addFileToFailed(
+      uploadingModel: uploadingModel,
+      logger: _buildLogger(prefs),
+    );
     service.invoke(_authFailureStream, {'id': uploadingModel.id});
   }
 
@@ -374,7 +398,10 @@ class TusBGFileUploaderManager {
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.addFileToFailed(uploadingModel: uploadingModel);
+    await prefs.addFileToFailed(
+      uploadingModel: uploadingModel,
+      logger: _buildLogger(prefs),
+    );
     service.invoke(_serverErrorStream, {'id': uploadingModel.id});
   }
 
@@ -398,16 +425,19 @@ class TusBGFileUploaderManager {
         ...failedUploads,
       ];
       for (final uploadingModel in uploadingModels) {
-        final uploader =
-            await _prepareUploader(service: service, model: uploadingModel, prefs: prefs);
+        final uploader = await _prepareUploader(
+          service: service,
+          model: uploadingModel,
+          prefs: prefs,
+        );
         await uploader.upload(headers: headers);
-        _logExistingFiles('NEXT FILE UPLOADED', prefs, service: service);
+        _logExistingFiles('NEXT FILE UPLOADING FINISHED', prefs, service: service);
       }
       final processingUploadsLeft = _getProcessingUploads(prefs, service);
       await _uploadFiles(prefs, service, processingUploadsLeft);
     } else {
       service.invoke(_allFilesUploadedStream);
-      _logExistingFiles('ALL FILES UPLOADED', prefs, service: service);
+      _logExistingFiles('ALL FILES UPLOADING FINISHED', prefs, service: service);
     }
   }
 
@@ -436,7 +466,10 @@ class TusBGFileUploaderManager {
       }
       model.path = compressedFile?.path ?? persistedFile.path;
       service?.invoke.call(_updatePathStream, {model.id.toString(): model.path});
-      await sharedPreferences.addFileToReadyForUpload(uploadingModel: model);
+      await sharedPreferences.addFileToReadyForUpload(
+        uploadingModel: model,
+        logger: _buildLogger(sharedPreferences, service: service),
+      );
     }
   }
 
@@ -451,7 +484,11 @@ class TusBGFileUploaderManager {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
-        prefs.removeFile(model, processingStoreKey);
+        prefs.removeFile(
+          model,
+          processingStoreKey,
+          _buildLogger(prefs),
+        );
       }
     }
     return filesToUpload;
@@ -468,7 +505,11 @@ class TusBGFileUploaderManager {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
-        prefs.removeFile(model, readyForUploadingStoreKey);
+        prefs.removeFile(
+          model,
+          readyForUploadingStoreKey,
+          _buildLogger(prefs),
+        );
       }
     }
     return filesToUpload;
@@ -485,7 +526,11 @@ class TusBGFileUploaderManager {
       if (model.existsSync) {
         filesToUpload.add(model);
       } else {
-        prefs.removeFile(model, failedStoreKey);
+        prefs.removeFile(
+          model,
+          failedStoreKey,
+          _buildLogger(prefs),
+        );
       }
     }
     return filesToUpload;
@@ -502,7 +547,15 @@ class TusBGFileUploaderManager {
       model,
     );
     await uploader.setupUploadUrl();
-    await prefs.addFileToProcessing(uploadingModel: model);
+    await prefs.addFileToProcessing(
+      uploadingModel: model,
+      logger: _buildLogger(prefs),
+    );
+    _logExistingFiles(
+      'FILES BEFORE NEXT UPLOADING',
+      prefs,
+      service: service,
+    );
     return uploader;
   }
 
@@ -538,9 +591,10 @@ class TusBGFileUploaderManager {
       headers: resultHeaders,
       failOnLostConnection: failOnLostConnection,
       loggerLevel: loggerLevel,
-      progressCallback: (uploadingModel, progress) async => _onProgress(
+      progressCallback: (uploadingModel, progress, lastChunkSize) async => _onProgress(
         uploadingModel: uploadingModel,
         progress: progress,
+        lastChunkSize: lastChunkSize,
         service: service,
       ),
       completeCallback: (uploadingModel, uploadUrl) async => _onNextFileComplete(

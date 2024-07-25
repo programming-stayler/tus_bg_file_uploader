@@ -1,3 +1,7 @@
+## 0.0.37
+
+Added logging during updating a file state
+
 ## 0.0.36
 
 Fixed restoring uploading process when internet connection changes

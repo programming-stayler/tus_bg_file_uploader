@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tus_bg_file_uploader/src/bg_file_uploader_manager.dart';
@@ -152,49 +153,74 @@ extension SharedPreferencesUtils on SharedPreferences {
     });
   }
 
-  Future<void> addFileToPending({required UploadingModel uploadingModel}) async {
+  Future<void> addFileToPending({
+    required UploadingModel uploadingModel,
+    required Logger logger,
+  }) async {
     await removeFile(uploadingModel, readyForUploadingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
-    await _updateMapEntry(uploadingModel, pendingStoreKey);
+    await _updateMapEntry(uploadingModel, pendingStoreKey, logger);
   }
 
-  Future<void> addFileToReadyForUpload({required UploadingModel uploadingModel}) async {
+  Future<void> addFileToReadyForUpload({
+    required UploadingModel uploadingModel,
+    required Logger logger,
+  }) async {
     await removeFile(uploadingModel, pendingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
     await removeFile(uploadingModel, processingStoreKey);
-    await _updateMapEntry(uploadingModel, readyForUploadingStoreKey);
+    await _updateMapEntry(uploadingModel, readyForUploadingStoreKey, logger);
   }
 
-  Future<void> addFileToProcessing({required UploadingModel uploadingModel}) async {
+  Future<void> addFileToProcessing({
+    required UploadingModel uploadingModel,
+    required Logger logger,
+  }) async {
     await removeFile(uploadingModel, readyForUploadingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
     await removeFile(uploadingModel, completeStoreKey);
-    await _updateMapEntry(uploadingModel, processingStoreKey);
+    await _updateMapEntry(uploadingModel, processingStoreKey, logger);
   }
 
-  Future<void> addFileToComplete({required UploadingModel uploadingModel}) async {
+  Future<void> addFileToComplete({
+    required UploadingModel uploadingModel,
+    required Logger logger,
+  }) async {
     await removeFile(uploadingModel, readyForUploadingStoreKey);
     await removeFile(uploadingModel, processingStoreKey);
     await removeFile(uploadingModel, failedStoreKey);
-    await _updateMapEntry(uploadingModel, completeStoreKey);
+    await _updateMapEntry(uploadingModel, completeStoreKey, logger);
   }
 
-  Future<void> addFileToFailed({required UploadingModel uploadingModel}) async {
+  Future<void> addFileToFailed({
+    required UploadingModel uploadingModel,
+    required Logger logger,
+  }) async {
     await removeFile(uploadingModel, readyForUploadingStoreKey);
     await removeFile(uploadingModel, processingStoreKey);
     await removeFile(uploadingModel, completeStoreKey);
-    await _updateMapEntry(uploadingModel, failedStoreKey);
+    await _updateMapEntry(uploadingModel, failedStoreKey, logger);
   }
 
-  Future<void> removeFileFromEveryStore(UploadingModel uploadingModel) async {
-    await removeFile(uploadingModel, pendingStoreKey);
-    await removeFile(uploadingModel, readyForUploadingStoreKey);
-    await removeFile(uploadingModel, processingStoreKey);
-    await removeFile(uploadingModel, completeStoreKey);
-    await removeFile(uploadingModel, failedStoreKey);
+  Future<void> removeFileFromEveryStore(
+    UploadingModel uploadingModel,
+    Logger logger,
+  ) async {
+    await removeFile(uploadingModel, pendingStoreKey, logger);
+    await removeFile(uploadingModel, readyForUploadingStoreKey, logger);
+    await removeFile(uploadingModel, processingStoreKey, logger);
+    await removeFile(uploadingModel, completeStoreKey, logger);
+    await removeFile(uploadingModel, failedStoreKey, logger);
   }
 
-  Future<bool> removeFile(UploadingModel uploadingModel, String storeKey) async {
+  Future<bool> removeFile(
+    UploadingModel uploadingModel,
+    String storeKey, [
+    Logger? logger,
+  ]) async {
+    if (logger != null) {
+      logger.d('REMOVING ${uploadingModel.path}\nfrom $storeKey');
+    }
     return lock.synchronized(() {
       final encodedResult = getStringList(storeKey);
       if (encodedResult != null) {
@@ -213,10 +239,19 @@ extension SharedPreferencesUtils on SharedPreferences {
     });
   }
 
-  Future<List<UploadingModel>> actualizeUnfinishedUploads() async {
-    final readyForUploadingUploads = await _actualizeUploadsForKey(readyForUploadingStoreKey);
-    final processingUploads = await _actualizeUploadsForKey(processingStoreKey);
-    final failedUploads = await _actualizeUploadsForKey(failedStoreKey);
+  Future<List<UploadingModel>> actualizeUnfinishedUploads(Logger logger) async {
+    final readyForUploadingUploads = await _actualizeUploadsForKey(
+      readyForUploadingStoreKey,
+      logger,
+    );
+    final processingUploads = await _actualizeUploadsForKey(
+      processingStoreKey,
+      logger,
+    );
+    final failedUploads = await _actualizeUploadsForKey(
+      failedStoreKey,
+      logger,
+    );
     return [
       ...readyForUploadingUploads,
       ...processingUploads,
@@ -225,28 +260,34 @@ extension SharedPreferencesUtils on SharedPreferences {
   }
 
   // PRIVATE ---------------------------------------------------------------------------------------
-  Future<List<UploadingModel>> _actualizeUploadsForKey(String key) async {
+  Future<List<UploadingModel>> _actualizeUploadsForKey(String key, Logger logger) async {
     final docsPath = (await getApplicationDocumentsDirectory()).path;
     final uploads = getFilesForKey(key).toList();
-    await _actualizeUploadsRecursively(uploads, key, docsPath);
+    await _actualizeUploadsRecursively(uploads, key, docsPath, logger);
     return uploads;
   }
 
   Future<void> _actualizeUploadsRecursively(
     List<UploadingModel> models,
     String key,
-    String rootPath, [
+    String rootPath,
+    Logger logger, [
     int index = 0,
   ]) async {
     if (index >= models.length) {
       return;
     }
     final model = models[index];
-    await _actualizeModel(model, key, rootPath);
-    await _actualizeUploadsRecursively(models, key, rootPath, index + 1);
+    await _actualizeModel(model, key, rootPath, logger);
+    await _actualizeUploadsRecursively(models, key, rootPath, logger, index + 1);
   }
 
-  Future<void> _actualizeModel(UploadingModel model, String key, String rootPath) async {
+  Future<void> _actualizeModel(
+    UploadingModel model,
+    String key,
+    String rootPath,
+    Logger logger,
+  ) async {
     var file = File(model.path);
     if (file.existsSync()) {
       return;
@@ -259,9 +300,9 @@ extension SharedPreferencesUtils on SharedPreferences {
     final nextPath = '$rootPath/$managerDocumentsDir/$fileName';
     file = File(nextPath);
     if (file.existsSync()) {
-      await removeFile(model, key);
+      await removeFile(model, key, logger);
       model.path = nextPath;
-      await _updateMapEntry(model, key);
+      await _updateMapEntry(model, key, logger);
     }
   }
 
@@ -277,7 +318,12 @@ extension SharedPreferencesUtils on SharedPreferences {
     return result;
   }
 
-  Future<bool> _updateMapEntry(UploadingModel uploadingModel, String storeKey) async {
+  Future<bool> _updateMapEntry(
+    UploadingModel uploadingModel,
+    String storeKey,
+    Logger logger,
+  ) async {
+    logger.d('UPDATING ${uploadingModel.path}\nin $storeKey');
     return lock.synchronized(() async {
       final result = getFilesForKey(storeKey);
       result.remove(uploadingModel);
