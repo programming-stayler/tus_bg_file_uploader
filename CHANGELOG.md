@@ -1,3 +1,7 @@
+## 0.0.38
+
+Fixed reloading prefs before writing it in different threads
+
 ## 0.0.37
 
 Added logging during updating a file state

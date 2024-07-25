@@ -169,7 +169,11 @@ class TusBGFileUploaderManager {
     if (!isRunning) {
       await service.startService();
     } else {
-      _persistFilesForUpload(uploadingModels: uploadingModels, sharedPreferences: prefs);
+      await _persistFilesForUpload(
+        uploadingModels: uploadingModels,
+        sharedPreferences: prefs,
+      );
+      _logExistingFiles('UPLOAD NOT STARTED - SERVICE IS RUNNING', prefs);
     }
   }
 
@@ -214,6 +218,7 @@ class TusBGFileUploaderManager {
 
   Future<void> removeFileById(int modelId) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final storeKeys = [
       pendingStoreKey,
       readyForUploadingStoreKey,
@@ -240,6 +245,7 @@ class TusBGFileUploaderManager {
   void resumeAllUploads() async {
     final unfinishedFiles = await checkForUnfinishedUploads();
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     await prefs.setUploadAfterStartingService(true);
 
     if (unfinishedFiles.isEmpty) return;
@@ -315,6 +321,7 @@ class TusBGFileUploaderManager {
     required String uploadUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     await prefs.addFileToComplete(
       uploadingModel: uploadingModel,
       logger: _buildLogger(prefs),
@@ -372,6 +379,7 @@ class TusBGFileUploaderManager {
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     await prefs.addFileToFailed(
       uploadingModel: uploadingModel,
       logger: _buildLogger(prefs),
@@ -385,6 +393,7 @@ class TusBGFileUploaderManager {
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     await prefs.addFileToFailed(
       uploadingModel: uploadingModel,
       logger: _buildLogger(prefs),
@@ -398,6 +407,7 @@ class TusBGFileUploaderManager {
     required ServiceInstance service,
   }) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     await prefs.addFileToFailed(
       uploadingModel: uploadingModel,
       logger: _buildLogger(prefs),
@@ -508,27 +518,6 @@ class TusBGFileUploaderManager {
         prefs.removeFile(
           model,
           readyForUploadingStoreKey,
-          _buildLogger(prefs),
-        );
-      }
-    }
-    return filesToUpload;
-  }
-
-  @pragma('vm:entry-point')
-  static List<UploadingModel> _getFailedUploads(
-    SharedPreferences prefs,
-    ServiceInstance service,
-  ) {
-    final allFailedFiles = prefs.getFailedUploading();
-    final filesToUpload = <UploadingModel>[];
-    for (var model in allFailedFiles) {
-      if (model.existsSync) {
-        filesToUpload.add(model);
-      } else {
-        prefs.removeFile(
-          model,
-          failedStoreKey,
           _buildLogger(prefs),
         );
       }
