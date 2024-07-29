@@ -1,4 +1,9 @@
+## 0.0.40
+
+Fixed calculating initial chunk size
+
 ## 0.0.39
+
 Added configurable rules for chunk size calculation
 
 ## 0.0.38
