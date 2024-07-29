@@ -1,3 +1,6 @@
+## 0.0.39
+Added configurable rules for chunk size calculation
+
 ## 0.0.38
 
 Fixed reloading prefs before writing it in different threads
