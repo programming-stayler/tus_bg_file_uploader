@@ -263,7 +263,7 @@ class TusBGFileUploaderManager {
   void stopService() async {
     final service = FlutterBackgroundService();
     service.invoke("stop");
-    (_objectsCache["logger"] as Logger?)?.close();
+    disposeLogger();
   }
 
   Future<bool> clearStorage() async {
@@ -693,8 +693,13 @@ class TusBGFileUploaderManager {
   @pragma('vm:entry-point')
   static Future _dispose(ServiceInstance service) async {
     service.stopSelf();
-    (_objectsCache["logger"] as Logger?)?.close();
+    disposeLogger();
     Future.delayed(const Duration(seconds: 2)).whenComplete(
         () => FlutterLocalNotificationsPlugin().cancel(_NotificationIds.uploadProgress.id));
+  }
+
+  static void disposeLogger(){
+    (_objectsCache['logger'] as Logger?)?.close();
+    _objectsCache.remove('logger');
   }
 }
