@@ -455,6 +455,7 @@ class TusBGFileUploaderManager {
         await uploader.upload(headers: headers);
         _logExistingFiles('NEXT FILE UPLOADING FINISHED', prefs, service: service);
       }
+      await prefs.reload();
       final processingUploadsLeft = _getProcessingUploads(prefs, service);
       await _uploadFiles(prefs, service, processingUploadsLeft);
     } else {

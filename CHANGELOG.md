@@ -1,3 +1,7 @@
+## 0.0.41
+
+Added handling 410 status code error
+
 ## 0.0.40
 
 Fixed calculating initial chunk size
