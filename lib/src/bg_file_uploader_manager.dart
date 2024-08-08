@@ -23,6 +23,7 @@ const _serverErrorStream = 'server_error';
 const _updatePathStream = 'update_path_stream';
 const _allFilesUploadedStream = 'all_files_uploaded_stream';
 const _logsStream = 'logs_stream';
+const notifChannelId = 'my_foreground';
 const managerDocumentsDir = 'bgFileUploaderManager';
 
 @pragma('vm:entry-point')
@@ -34,29 +35,6 @@ enum _NotificationIds {
   final int id;
 
   const _NotificationIds(this.id);
-}
-
-Future<void> initAndroidNotifChannel() async {
-  await FlutterLocalNotificationsPlugin().initialize(
-    const InitializationSettings(
-      iOS: DarwinInitializationSettings(),
-      android: AndroidInitializationSettings('ic_bg_service_small'),
-    ),
-    onDidReceiveNotificationResponse: (response) async {
-      // print('onDidReceiveNotificationResponse');
-    },
-  );
-
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'my_foreground', // id
-    'MY FOREGROUND SERVICE', // title
-    description: 'This channel is used for important notifications.', // description
-    importance: Importance.low, // importance must be at low or higher level
-  );
-
-  await FlutterLocalNotificationsPlugin()
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
 }
 
 class TusBGFileUploaderManager {
@@ -122,13 +100,16 @@ class TusBGFileUploaderManager {
     if (compressParams != null) {
       prefs.setCompressParams(compressParams);
     }
+
+    if (Platform.isAndroid) await initAndroidNotifChannelIfNeeded();
+
     final service = FlutterBackgroundService();
     await service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: _onStart,
         autoStart: false,
         isForegroundMode: true,
-        notificationChannelId: 'my_foreground',
+        notificationChannelId: notifChannelId,
         initialNotificationTitle: 'Upload files',
         initialNotificationContent: 'Preparing to upload',
         foregroundServiceNotificationId: _NotificationIds.uploadProgress.id,
@@ -139,6 +120,37 @@ class TusBGFileUploaderManager {
         onBackground: onIosBackground,
       ),
     );
+  }
+
+  Future<void> initAndroidNotifChannelIfNeeded() async {
+    final channelInitialized = (await FlutterLocalNotificationsPlugin()
+                .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+                ?.getNotificationChannels())
+            ?.any((channel) => channel.id == notifChannelId) ==
+        true;
+
+    if (channelInitialized) return;
+
+    await FlutterLocalNotificationsPlugin().initialize(
+      const InitializationSettings(
+        iOS: DarwinInitializationSettings(),
+        android: AndroidInitializationSettings('ic_bg_service_small'),
+      ),
+      onDidReceiveNotificationResponse: (response) async {
+        // print('onDidReceiveNotificationResponse');
+      },
+    );
+
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      notifChannelId, // id
+      'MY FOREGROUND SERVICE', // title
+      description: 'This channel is used for important notifications.', // description
+      importance: Importance.low, // importance must be at low or higher level
+    );
+
+    await FlutterLocalNotificationsPlugin()
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
   }
 
   Future<List<UploadingModel>> checkForUnfinishedUploads() async {
@@ -674,7 +686,7 @@ class TusBGFileUploaderManager {
       '',
       NotificationDetails(
         android: AndroidNotificationDetails(
-          'my_foreground',
+          notifChannelId,
           'MY FOREGROUND SERVICE',
           showProgress: true,
           progress: progress,
