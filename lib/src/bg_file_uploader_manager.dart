@@ -132,6 +132,7 @@ class TusBGFileUploaderManager {
         initialNotificationTitle: 'Upload files',
         initialNotificationContent: 'Preparing to upload',
         foregroundServiceNotificationId: _NotificationIds.uploadProgress.id,
+        foregroundServiceType: AndroidForegroundType.dataSync,
       ),
       iosConfiguration: IosConfiguration(
         autoStart: false,

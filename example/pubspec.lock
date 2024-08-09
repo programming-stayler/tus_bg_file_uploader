@@ -114,34 +114,34 @@ packages:
     dependency: transitive
     description:
       name: flutter_background_service
-      sha256: "94d9a143852729140e17254a53769383b03738cd92b6e588a8762003e6cd9dd9"
+      sha256: "8807ed792227be05329478870b92f2df62c7af96f49763f6d62ad39d2eac6ee6"
       url: "https://pub.dev"
     source: hosted
-    version: "5.0.5"
+    version: "5.0.7"
   flutter_background_service_android:
     dependency: transitive
     description:
       name: flutter_background_service_android
-      sha256: "30863ebafd8214b8e76d5e5c9f27887dc5cc303fcf3e89f71534f621fc486782"
+      sha256: fe06c4bd719b8ce8512d5724a229526155c1f54f734524b8e43f8212e98384a8
       url: "https://pub.dev"
     source: hosted
-    version: "6.2.2"
+    version: "6.2.4"
   flutter_background_service_ios:
     dependency: transitive
     description:
       name: flutter_background_service_ios
-      sha256: ab73657535876e16abc89e40f924df3e92ad3dee83f64d187081417e824709ed
+      sha256: "45c8aca1e8850e5c45822152b06d5806aba9470517dcd2c291fce8ef99a44d60"
       url: "https://pub.dev"
     source: hosted
-    version: "5.0.0"
+    version: "5.0.2"
   flutter_background_service_platform_interface:
     dependency: transitive
     description:
       name: flutter_background_service_platform_interface
-      sha256: cd5720ff5b051d551a4734fae16683aace779bd0425e8d3f15d84a0cdcc2d8d9
+      sha256: "91dd3391c213e37094fbc3fb7f34319b99ea9df76036a5c054d6371be843b0ae"
       url: "https://pub.dev"
     source: hosted
-    version: "5.0.0"
+    version: "5.1.1"
   flutter_image_compress:
     dependency: transitive
     description:
@@ -571,15 +571,15 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "0.0.38"
+    version: "0.0.40"
   tus_file_uploader:
     dependency: transitive
     description:
       name: tus_file_uploader
-      sha256: "0e8abedd87bd57872ab304397096cc3a3f8c2d9dac859a1e7a025d1c733f69f4"
+      sha256: e04b55d1770633a0b2649452bcc7d21e019fe6045c6e07ca62ebdbb0da495a93
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.31"
+    version: "0.0.34"
   typed_data:
     dependency: transitive
     description:
